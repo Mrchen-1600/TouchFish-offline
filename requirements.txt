@@ -1,0 +1,17 @@
+# 视觉处理
+opencv-python-headless>=4.5.0
+# 人脸识别
+face-recognition>=1.3.0
+# 语音识别
+vosk>=0.3.40
+# 音频录制
+PyAudio>=0.2.11
+# 图像处理
+Pillow>=9.0.0
+# 键盘鼠标控制
+Pyautogui>=0.9.50
+# 打包工具
+pyinstaller>=5.0
+# 科学计算
+numpy>=1.20.0
+
