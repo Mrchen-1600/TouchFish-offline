@@ -48,12 +48,25 @@ def trigger_protection(action_type, safe_app_path, fallback_url):
     if safe_app_path and os.path.exists(safe_app_path):
         try:
             print(f"正在打开应用: {safe_app_path}")
-            os.startfile(safe_app_path)
+            cmd = f'start /max "" "{safe_app_path}"'
+            subprocess.run(cmd, shell=True)
+
             app_opened = True
         except Exception as e:
             print(f"打开应用失败: {e}")
+            # 如果 start /max 失败，尝试回退到普通启动
+            try:
+                os.startfile(safe_app_path)
+                app_opened = True
+            except:
+                pass
 
     # 如果没配置应用或打开失败，打开网页
     if not app_opened:
         print(f"打开备用链接: {fallback_url}")
-        webbrowser.open(fallback_url)
+        # 对于网页，我们也可以尝试用 start /max 启动默认浏览器
+        try:
+            cmd = f'start /max "" "{fallback_url}"'
+            subprocess.run(cmd, shell=True)
+        except:
+            webbrowser.open(fallback_url)

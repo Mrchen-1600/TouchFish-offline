@@ -13,33 +13,33 @@ from PIL import Image, ImageTk
 # ==============================================================================
 import face_recognition_models
 
-def fix_face_recognition_path():
-    # 1. 计算 EXE 所在的真实目录
-    if getattr(sys, 'frozen', False):
-        base_path = os.path.dirname(sys.executable)
-    else:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-
-    # 2. 拼接出我们打包好的模型文件夹路径
-    # 注意：这个路径必须对应 build.spec 里 Tree 的 prefix 设置
-    models_dir = os.path.join(base_path, 'face_recognition_models', 'models')
-
-    # 3. 打印调试信息，方便看日志
-    print(f"[Patch] 强制重定向人脸模型路径至: {models_dir}")
-
-    # 4. 强行修改库内部的函数
-    def patched_pose_predictor_model_location():
-        return os.path.join(models_dir, "shape_predictor_68_face_landmarks.dat")
-
-    def patched_cnn_face_detector_model_location():
-        return os.path.join(models_dir, "mmod_human_face_detector.dat")
-
-    # 覆盖原库的函数
-    face_recognition_models.pose_predictor_model_location = patched_pose_predictor_model_location
-    face_recognition_models.cnn_face_detector_model_location = patched_cnn_face_detector_model_location
-
-# 立即执行补丁
-fix_face_recognition_path()
+# def fix_face_recognition_path():
+#     # 1. 计算 EXE 所在的真实目录
+#     if getattr(sys, 'frozen', False):
+#         base_path = os.path.dirname(sys.executable)
+#     else:
+#         base_path = os.path.dirname(os.path.abspath(__file__))
+#
+#     # 2. 拼接出我们打包好的模型文件夹路径
+#     # 注意：这个路径必须对应 build.spec 里 Tree 的 prefix 设置
+#     models_dir = os.path.join(base_path, 'face_recognition_models', 'models')
+#
+#     # 3. 打印调试信息，方便看日志
+#     print(f"[Patch] 强制重定向人脸模型路径至: {models_dir}")
+#
+#     # 4. 强行修改库内部的函数
+#     def patched_pose_predictor_model_location():
+#         return os.path.join(models_dir, "shape_predictor_68_face_landmarks.dat")
+#
+#     def patched_cnn_face_detector_model_location():
+#         return os.path.join(models_dir, "mmod_human_face_detector.dat")
+#
+#     # 覆盖原库的函数
+#     face_recognition_models.pose_predictor_model_location = patched_pose_predictor_model_location
+#     face_recognition_models.cnn_face_detector_model_location = patched_cnn_face_detector_model_location
+#
+# # 立即执行补丁
+# fix_face_recognition_path()
 
 
 from settings_manager import SettingsManager
