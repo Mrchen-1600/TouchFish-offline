@@ -8,7 +8,7 @@ import cv2
 from PIL import Image, ImageTk
 
 # ==============================================================================
-# 猴子补丁
+# 猴子补丁 (打包时用，解决 face_recognition 模型路径问题)
 # 强制告诉 face_recognition 库：模型文件就在 EXE 旁边的文件夹里
 # ==============================================================================
 import face_recognition_models
@@ -314,7 +314,7 @@ class MainWindow:
     def __init__(self, root):
         self.root = root
         self.root.title("摸鱼神器 - 离线版")
-        self.root.geometry("850x900")
+        self.root.geometry("1000x1000")
 
         # 加载图标
         try:
@@ -356,7 +356,32 @@ class MainWindow:
             side='left')
         ttk.Radiobutton(frame_radio, text="关闭当前 (Alt+F4)", variable=self.var_action_type, value="close").pack(
             side='left')
-        ttk.Label(tab_action, text="* 触发时将强制静音", foreground="red").grid(row=5, column=1, sticky='w')
+        ttk.Radiobutton(frame_radio, text="关闭所有", variable=self.var_action_type, value="kill_all").pack(side='left', padx=5)
+
+        # 白名单 UI (Listbox)
+        ttk.Label(tab_action, text="白名单 (关闭所有时保留):").grid(row=6, column=0, sticky='nw', pady=(10, 0))
+
+        whitelist_frame = ttk.Frame(tab_action)
+        whitelist_frame.grid(row=6, column=1, sticky='w', pady=(10, 0))
+
+        # 列表框 + 滚动条
+        self.list_whitelist = tk.Listbox(whitelist_frame, height=5, width=40)
+        self.list_whitelist.pack(side='left', fill='y')
+
+        scrollbar = ttk.Scrollbar(whitelist_frame, orient="vertical", command=self.list_whitelist.yview)
+        scrollbar.pack(side='left', fill='y')
+        self.list_whitelist.config(yscrollcommand=scrollbar.set)
+
+        # 加载初始数据
+        init_whitelist = self.settings.get("whitelist_apps", [])
+
+        # 操作按钮
+        btn_frame = ttk.Frame(whitelist_frame)
+        btn_frame.pack(side='left', fill='y', padx=5)
+        ttk.Button(btn_frame, text="添加应用...", command=self.add_whitelist_app).pack(pady=2)
+        ttk.Button(btn_frame, text="移除选中", command=self.remove_whitelist_app).pack(pady=2)
+
+        ttk.Label(tab_action, text="* 触发时将强制静音，'关闭所有'会关闭除本软件和白名单外的所有窗口", foreground="red", wraplength=450).grid(row=8, column=1, sticky='w', pady=5)
 
         # Tab 2
         tab_vision = ttk.Frame(notebook, padding=10)
@@ -396,6 +421,30 @@ class MainWindow:
         self.log_text.pack(fill='both', expand=True)
 
         ttk.Button(self.root, text="保存配置", command=self.save_all).pack(side='bottom', pady=10)
+
+
+    # --- 白名单管理函数 ---
+    def add_whitelist_app(self):
+        # 允许选择多个 exe
+        paths = filedialog.askopenfilenames(
+            title="选择要保留的应用程序",
+            filetypes=[("可执行文件", "*.exe"), ("所有文件", "*.*")]
+        )
+        if paths:
+            for path in paths:
+                # 只提取文件名 (如 chrome.exe)
+                filename = os.path.basename(path)
+                # 查重
+                if filename not in self.list_whitelist.get(0, tk.END):
+                    self.list_whitelist.insert(tk.END, filename)
+
+    def remove_whitelist_app(self):
+        selected = self.list_whitelist.curselection()
+        if not selected: return
+        # 从后往前删，避免索引错位
+        for index in reversed(selected):
+            self.list_whitelist.delete(index)
+
 
     def open_camera_picker(self):
         if self.monitor_thread and self.monitor_thread.is_alive():
@@ -463,10 +512,15 @@ class MainWindow:
         self.log_text.config(state='disabled')
 
     def save_all(self):
+        # 收集白名单
+        whitelist = list(self.list_whitelist.get(0, tk.END))
+
         new_conf = {
             "safe_app_path": self.ent_safe_app_path.get(),
             "fallback_url": self.ent_fallback_url.get(),
             "action_type": self.var_action_type.get(),
+            # 白名单保存
+            "whitelist_apps": whitelist,
             "user_image_path": self.ent_user_image_path.get(),
             "voice_keywords": self.ent_voice_keywords.get(),
             "camera_index": self.var_camera_index.get(),
@@ -510,7 +564,9 @@ class MainWindow:
         self.root.after(0, lambda: trigger_protection(
             self.settings.get('action_type', 'minimize'),
             self.settings.get('safe_app_path'),
-            self.settings.get('fallback_url')
+            self.settings.get('fallback_url'),
+            # 传递白名单参数
+            self.settings.get('whitelist_apps', [])
         ))
 
 

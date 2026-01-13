@@ -21,6 +21,15 @@ DEFAULT_SETTINGS = {
     "fallback_url": "https://www.google.com", # 默认谷歌浏览器
     "action_type": "minimize",  # 'minimize' 或 'close'
 
+    # 白名单：即使选择关闭所有，包含这些名字的窗口也不会关
+    "whitelist_apps": [
+        "winword.exe",
+        "excel.exe",
+        "powerpnt.exe",
+        "pycharm64.exe",
+        "code.exe"
+    ],
+
     # 视觉设置
     "user_image_path": "default_user.jpg",
     "camera_index": 0,
