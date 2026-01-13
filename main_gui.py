@@ -88,9 +88,14 @@ class CameraSelectionDialog:
         self.current_cam_index = current_index
         self.cap = None
         self.is_previewing = False
+        self.valid_cams = []  # 存储有效的摄像头索引
 
         self._init_ui()
-        self._start_preview(self.current_cam_index)
+
+        # 启动后台线程进行设备扫描
+        scan_thread = threading.Thread(target=self._scan_devices, daemon=True)
+        scan_thread.start()
+
         self.top.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def _init_ui(self):
@@ -98,57 +103,144 @@ class CameraSelectionDialog:
         ctrl_frame.pack(fill='x')
         ttk.Label(ctrl_frame, text="检测到的设备:").pack(side='left')
 
-        self.available_cams = [i for i in range(4)]
-        self.combo_cam = ttk.Combobox(ctrl_frame, values=self.available_cams, state="readonly", width=5)
-        self.combo_cam.set(self.current_cam_index)
+        # 初始状态：显示扫描中
+        self.combo_cam = ttk.Combobox(ctrl_frame, state="disabled", width=25)
+        self.combo_cam.set("正在扫描设备...")
         self.combo_cam.pack(side='left', padx=5)
         self.combo_cam.bind("<<ComboboxSelected>>", self._on_cam_change)
 
-        ttk.Label(ctrl_frame, text="(切换后请稍等画面加载)").pack(side='left', padx=5)
-        self.video_label = ttk.Label(self.top, text="正在加载摄像头...", anchor="center")
+        # 视频区域
+        self.video_label = ttk.Label(self.top, text="正在检测摄像头硬件，请稍候...", anchor="center")
         self.video_label.pack(fill='both', expand=True, padx=10, pady=5)
 
         btn_frame = ttk.Frame(self.top, padding=10)
         btn_frame.pack(fill='x', side='bottom')
         ttk.Button(btn_frame, text="取消", command=self.on_close).pack(side='right', padx=5)
-        ttk.Button(btn_frame, text="确认使用此设备", command=self.confirm_selection).pack(side='right', padx=5)
+        # 初始禁用确认按钮，直到加载出画面
+        self.btn_confirm = ttk.Button(btn_frame, text="确认使用此设备", command=self.confirm_selection,
+                                      state='disabled')
+        self.btn_confirm.pack(side='right', padx=5)
+
+
+    def _scan_devices(self):
+        """后台线程：快速扫描前4个索引"""
+        found = []
+        # 大多数用户摄像头索引在 0-3 之间
+        for index in range(4):
+            try:
+                # 使用 CAP_DSHOW 加速 Windows 下的探测
+                if os.name == 'nt':
+                    temp_cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+                else:
+                    temp_cap = cv2.VideoCapture(index)
+
+                if temp_cap is not None and temp_cap.isOpened():
+                    # 尝试读取一帧以确保真的可用
+                    ret, _ = temp_cap.read()
+                    if ret:
+                        found.append(index)
+                    temp_cap.release()
+            except:
+                pass
+
+        # 扫描完成，通知主线程更新 UI
+        self.top.after(0, lambda: self._on_scan_finished(found))
+
+    def _on_scan_finished(self, found_cams):
+        self.valid_cams = found_cams
+
+        if not found_cams:
+            self.combo_cam.config(values=["未找到可用摄像头"])
+            self.combo_cam.set("未找到可用摄像头")
+            self.video_label.config(text="未检测到摄像头\n请检查设备连接", image='')
+            return
+
+        # 生成下拉列表内容，如 ["摄像头 0", "摄像头 1"]
+        combo_values = [f"摄像头 {i}" for i in found_cams]
+        self.combo_cam.config(values=combo_values, state="readonly")
+
+        # 决定选中哪一个：优先选用户之前存的，如果没有，选第一个
+        target_index = found_cams[0]
+        if self.current_cam_index in found_cams:
+            target_index = self.current_cam_index
+
+        # 设置下拉框文字
+        self.combo_cam.current(found_cams.index(target_index))
+
+        # 立即启动预览
+        self._start_preview(target_index)
+
 
     def _on_cam_change(self, event):
-        new_idx = int(self.combo_cam.get())
-        if new_idx != self.current_cam_index:
-            self._stop_preview()
-            self._start_preview(new_idx)
+        selection = self.combo_cam.get()
+        try:
+            new_idx = int(selection.split(' ')[1])
+            if new_idx != self.current_cam_index:
+                self._stop_preview()
+                self._start_preview(new_idx)
+        except:
+            pass
 
     def _start_preview(self, index):
         self.current_cam_index = index
+        self.is_previewing = False
+
+        self.video_label.config(text="正在加载画面...", image='')
+        self.btn_confirm.config(state='disabled')
+
+        # 开启线程加载选中的摄像头，防止UI卡顿
+        threading.Thread(target=self._open_camera_thread, args=(index,), daemon=True).start()
+
+    def _open_camera_thread(self, index):
+        cap = None
         try:
-            self.cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
-            if not self.cap.isOpened():
-                self.video_label.config(text=f"无法打开摄像头 {index}", image='')
-                return
+            if os.name == 'nt':
+                cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+            else:
+                cap = cv2.VideoCapture(index)
+        except:
+            pass
+
+        self.top.after(0, lambda: self._handle_open_result(index, cap))
+
+    def _handle_open_result(self, index, cap):
+        # 如果用户手快又切走了，丢弃这个结果
+        if index != self.current_cam_index:
+            if cap: cap.release()
+            return
+
+        if cap and cap.isOpened():
+            self.cap = cap
             self.is_previewing = True
+            self.btn_confirm.config(state='normal')
+            self.video_label.config(text="")
             self._update_frame()
-        except Exception as e:
-            self.video_label.config(text=f"初始化错误: {e}", image='')
+        else:
+            self.video_label.config(text=f"无法打开摄像头 {index}", image='')
+
 
     def _stop_preview(self):
         self.is_previewing = False
-        if self.cap and self.cap.isOpened():
-            self.cap.release()
-        self.cap = None
+        if self.cap:
+            if self.cap.isOpened():
+                self.cap.release()
+            self.cap = None
 
     def _update_frame(self):
-        if not self.is_previewing or not self.cap:
-            return
-        ret, frame = self.cap.read()
-        if ret:
-            cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(cv2image)
-            img_tk = ImageTk.PhotoImage(image=img.resize((560, 380)))
-            self.video_label.imgtk = img_tk
-            self.video_label.config(image=img_tk, text="")
-        else:
-            self.video_label.config(text="无法获取画面帧", image='')
+        if not self.is_previewing or not self.cap: return
+        try:
+            ret, frame = self.cap.read()
+            if ret:
+                cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(cv2image)
+                img_tk = ImageTk.PhotoImage(image=img.resize((560, 380)))
+                self.video_label.imgtk = img_tk
+                self.video_label.config(image=img_tk, text="")
+            else:
+                self.video_label.config(text="无法获取帧", image='')
+        except:
+            pass
+
         if self.is_previewing:
             self.top.after(30, self._update_frame)
 
