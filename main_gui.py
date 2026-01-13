@@ -322,7 +322,6 @@ class MonitorThread(threading.Thread):
                 self.callback_log("--> 提示: 请确认 'model' 文件夹存在于软件目录中。")
 
             # --- 3. 状态自检与启动 ---
-
             # 视觉状态检查
             vision_active = False
             if vision_mon.is_ready:
@@ -466,6 +465,8 @@ class MainWindow:
 
         # 加载初始数据
         init_whitelist = self.settings.get("whitelist_apps", [])
+        for app in init_whitelist:
+            self.list_whitelist.insert(tk.END, app)
 
         # 操作按钮
         btn_frame = ttk.Frame(whitelist_frame)
