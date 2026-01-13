@@ -4,7 +4,7 @@ import os
 import glob
 import site
 import vosk
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_all
 
 block_cipher = None
 base_dir = os.getcwd() # 获取当前工作目录
@@ -29,7 +29,7 @@ else:
 
 
 # 3. 自动收集 face_recognition_models 里的所有 .dat 模型文件
-face_models = collect_data_files('face_recognition_models')
+fr_datas, fr_binaries, fr_hidden = collect_all('face_recognition_models')
 
 # 4. 手动添加我们自己的资源
 # 格式: (源路径, 目标路径)
@@ -41,7 +41,9 @@ my_datas = [
 ]
 
 # 5. 合并所有资源列表
-all_datas = my_datas + face_models
+all_datas = my_datas + fr_datas
+# 合并所有二进制 (dlib + 人脸模型可能需要的 dll)
+all_binaries = dlib_binaries + fr_binaries
 
 # --- 6.排除不需要的库 ---
 # 这些库通常体积很大，但摸鱼神器用不到
@@ -62,9 +64,8 @@ hidden_imports = [
     'PIL',
     'PIL.ImageTk',
     'dlib',
-    # 配合上面的 binaries 物理文件，双管齐下
     '_dlib_pybind11',
-]
+] + fr_hidden
 
 a = Analysis(
     ['main_gui.py'],
