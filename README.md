@@ -132,3 +132,5 @@ pyinstaller build.spec
 
 ## 📄 开源协议
 本项目采用 [GNU Affero General Public License v3.0 (AGPL-3.0)](https://opensource.org/licenses/AGPL-3.0) 开源。
+
+**Copyright (c) 2026 [Mr. Chen]**
