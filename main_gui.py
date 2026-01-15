@@ -45,7 +45,7 @@ import face_recognition_models
 from settings_manager import SettingsManager
 from modules.actions import trigger_protection
 from modules.vision import VisionMonitor
-from modules.audio import AudioMonitor
+from modules.audio import AudioMonitor, measure_ambient_noise
 
 
 # --- 资源路径查找 ---
@@ -315,7 +315,8 @@ class MonitorThread(threading.Thread):
 
                 audio_mon = AudioMonitor(
                     keywords_str=self.settings.get('voice_keywords', ""),
-                    model_path=model_path
+                    model_path=model_path,
+                    energy_threshold=int(self.settings.get('voice_energy_threshold', 300))
                 )
             except Exception as e:
                 self.callback_log(f"音频模块警告: {e}")
@@ -390,8 +391,12 @@ class MonitorThread(threading.Thread):
         self.callback_log(f"!!! 触发保护: {reason} !!!")
         self.paused = True
         self.callback_trigger()
-        self.callback_log("进入冷却模式 (10s)...")
-        time.sleep(10)
+
+        # 使用配置的冷却时间
+        cool_time = int(self.settings.get('cooling_time', 10))
+        self.callback_log(f"进入冷却模式 ({cool_time}s)...")
+        time.sleep(cool_time)
+
         self.stranger_counter = 0
         self.absence_counter = 0
         self.paused = False
@@ -474,6 +479,11 @@ class MainWindow:
         ttk.Button(btn_frame, text="添加应用...", command=self.add_whitelist_app).pack(pady=2)
         ttk.Button(btn_frame, text="移除选中", command=self.remove_whitelist_app).pack(pady=2)
 
+        # 新增冷却时间滑块
+        # 3s - 600s (10min)
+        self._build_slider(tab_action, "冷却时间 (秒):", "cooling_time", 8, 3, 600,
+                           "触发保护后，暂停监控的时长，防止频繁触发多次打开安全应用 (3s - 10分钟)", is_int=True)
+
         ttk.Label(tab_action, text="* 触发时将强制静音，'关闭所有'会关闭除本软件和白名单外的所有窗口", foreground="red", wraplength=450).grid(row=8, column=1, sticky='w', pady=5)
 
         # Tab 2
@@ -503,7 +513,29 @@ class MainWindow:
         tab_audio = ttk.Frame(notebook, padding=10)
         notebook.add(tab_audio, text="语音监听")
         self._build_entry(tab_audio, "触发关键词:", "voice_keywords", 0, "英文逗号分隔，如: 老板,来了")
-        ttk.Label(tab_audio, text="提示: 模型需位于 exe 同级或 _internal 文件夹中。", foreground="gray").grid(row=2,
+
+        # 噪音检测 UI
+        ttk.Label(tab_audio, text="环境噪音门限:").grid(row=2, column=0, sticky='nw', pady=(10, 0))
+
+        noise_frame = ttk.Frame(tab_audio)
+        noise_frame.grid(row=2, column=1, sticky='w', pady=(10, 0))
+
+        # 使用进度条可视化噪音门限
+        self.var_noise_val = tk.IntVar(value=int(self.settings.get('voice_energy_threshold', 300)))
+        self.pb_noise = ttk.Progressbar(noise_frame, orient='horizontal', length=200, mode='determinate', maximum=2000,
+                                        variable=self.var_noise_val)
+        self.pb_noise.pack(side='left', padx=5)
+
+        self.lbl_noise_val = ttk.Label(noise_frame, text=f"{self.var_noise_val.get()}")
+        self.lbl_noise_val.pack(side='left')
+
+        self.btn_detect_noise = ttk.Button(noise_frame, text="点击检测环境噪音(5s)", command=self.detect_noise)
+        self.btn_detect_noise.pack(side='left', padx=10)
+        ttk.Label(tab_audio, text="请在安静环境下点击，程序会自动采集并设定阈值。", foreground="gray").grid(row=3,
+                                                                                                          column=1,
+                                                                                                          sticky='w')
+
+        ttk.Label(tab_audio, text="提示: 模型需位于 exe 同级或 _internal 文件夹中。", foreground="gray").grid(row=4,
                                                                                                              column=1,
                                                                                                              sticky='w',
                                                                                                              pady=10)
@@ -514,6 +546,37 @@ class MainWindow:
         self.log_text.pack(fill='both', expand=True)
 
         ttk.Button(self.root, text="保存配置", command=self.save_all).pack(side='bottom', pady=10)
+
+    # ==================  噪音检测逻辑 ==================
+    def detect_noise(self):
+        # 如果正在监控，禁止检测
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            messagebox.showwarning("提示", "请先停止监控，再进行噪音检测。")
+            return
+
+        def _detect_task():
+            self.btn_detect_noise.config(state='disabled', text="正在采集(5s)...")
+            self.log("开始采集 5秒 环境噪音...")
+
+            # 调用 audio 模块的函数
+            try:
+                new_threshold = measure_ambient_noise(duration=5)
+                # 更新 UI
+                self.root.after(0, lambda: self._update_noise_ui(new_threshold))
+            except Exception as e:
+                self.root.after(0, lambda: self.log(f"采集失败: {e}"))
+                self.root.after(0,
+                                lambda: self.btn_detect_noise.config(state='normal', text="点击检测环境噪音(5s)"))
+
+        threading.Thread(target=_detect_task, daemon=True).start()
+
+    def _update_noise_ui(self, val):
+        self.var_noise_val.set(val)
+        self.lbl_noise_val.config(text=str(val))
+        self.log(f"环境噪音检测完成，建议阈值已设为: {val}")
+        self.btn_detect_noise.config(state='normal', text="点击检测环境噪音(5s)")
+        # 自动保存一次
+        self.save_all()
 
 
     # --- 白名单管理函数 ---
@@ -621,7 +684,9 @@ class MainWindow:
             "tolerance": round(self.var_tolerance.get(), 2),
             "stranger_threshold": int(self.var_stranger_threshold.get()),
             "absence_threshold": int(self.var_absence_threshold.get()),
-            "voice_energy_threshold": 300
+
+            "voice_energy_threshold": self.var_noise_val.get(),
+            "cooling_time": int(self.var_cooling_time.get())
         }
         if self.manager.save_settings(new_conf):
             self.settings = new_conf

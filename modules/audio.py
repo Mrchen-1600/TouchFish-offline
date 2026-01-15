@@ -1,9 +1,50 @@
 import os
-import queue
+import time
+import audioop
 import json
 import threading
 import pyaudio
 from vosk import Model, KaldiRecognizer
+
+
+def measure_ambient_noise(duration=5):
+    """
+    静态辅助函数：采集环境噪音 5秒，返回推荐的阈值 (平均能量 * 1.2)
+    注意：调用此函数前应确保麦克风未被其他线程占用
+    """
+    p = pyaudio.PyAudio()
+    try:
+        stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=4000)
+        print(f"开始采集环境噪音 ({duration}秒)...")
+
+        rms_values = []
+        start_time = time.time()
+
+        while time.time() - start_time < duration:
+            data = stream.read(4000, exception_on_overflow=False)
+            # 计算这一帧的均方根 (RMS) 能量
+            rms = audioop.rms(data, 2)  # 2 表示采样宽度 (16bit = 2bytes)
+            rms_values.append(rms)
+
+        stream.stop_stream()
+        stream.close()
+
+        if not rms_values:
+            return 300  # 默认值
+
+        avg_rms = sum(rms_values) / len(rms_values)
+        max_rms = max(rms_values)
+        print(f"环境噪音检测完成。平均: {avg_rms}, 最大: {max_rms}")
+
+        # 平均噪音的 1.25 倍，或者最大噪音 + 50，取大者防止误触
+        threshold = max(avg_rms * 1.25, max_rms + 50)
+        return int(threshold)
+
+    except Exception as e:
+        print(f"噪音检测失败: {e}")
+        return 300
+    finally:
+        p.terminate()
 
 
 class AudioMonitor:
@@ -15,6 +56,9 @@ class AudioMonitor:
         """
         # 处理关键词
         self.keywords = [k.strip().lower() for k in keywords_str.split(',') if k.strip()]
+
+        self.energy_threshold = int(energy_threshold)
+        print(f"[Audio] 当前噪音过滤门限: {self.energy_threshold}")
 
         # 线程控制
         self.running = False
@@ -93,6 +137,12 @@ class AudioMonitor:
                 # 读取音频数据
                 data = self.stream.read(4000, exception_on_overflow=False)
                 if len(data) == 0:
+                    continue
+
+                # 计算当前音频帧的能量
+                rms = audioop.rms(data, 2)
+                # 如果能量低于阈值，视为静音或背景噪音，直接跳过识别
+                if rms < self.energy_threshold:
                     continue
 
                 # 识别处理

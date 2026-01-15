@@ -42,7 +42,9 @@ DEFAULT_SETTINGS = {
     "voice_energy_threshold": 300,  # 麦克风能量门限 (杂音过滤)
 
     # 全局采样
-    "sample_interval": 0.5  # 检测间隔(秒)
+    "sample_interval": 0.2,  # 检测间隔(秒)
+    # 冷却时间(秒)
+    "cooldown_time": 10,
 }
 
 
