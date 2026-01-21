@@ -14,7 +14,7 @@
 **语音关键词触发：**
 
 <video width="640" height="360" controls autoplay loop muted>
-  <source src="https://github.com/mrchen-1600/TouchFish-offline/raw/main/img/sound.mp4" type="video/mp4">
+  <source src="img/sound.mp4" type="video/mp4">
   你的浏览器不支持 HTML5 视频播放，请下载视频查看：<a href="img/sound.mp4">sound.mp4</a>
 </video>
 
