@@ -12,7 +12,7 @@
 >
 
 **语音关键词触发：**
-![sound](https://www.bilibili.com/video/BV1viz5BaEiY)
+[![sound]()](https://www.bilibili.com/video/BV1viz5BaEiY)
 
 **离席触发：**
 ![leave](img/leave.gif)
